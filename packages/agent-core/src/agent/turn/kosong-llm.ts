@@ -181,6 +181,7 @@ function buildStreamTiming(
   const timing: {
     -readonly [K in keyof LLMStreamTiming]: LLMStreamTiming[K];
   } = {
+    outputStartedAt: firstChunkAt,
     firstTokenLatencyMs,
     streamDurationMs: Math.max(0, outputEndedAt - firstChunkAt),
   };

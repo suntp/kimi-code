@@ -149,6 +149,7 @@ describe('KosongLLM stream timing', () => {
     });
 
     expect(response.streamTiming).toMatchObject({
+      outputStartedAt: expect.any(Number),
       firstTokenLatencyMs: expect.any(Number),
       streamDurationMs: expect.any(Number),
     });

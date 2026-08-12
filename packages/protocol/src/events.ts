@@ -646,6 +646,8 @@ export interface TurnStepStartedEvent {
   readonly turnId: number;
   readonly step: number;
   readonly stepId?: string;
+  /** Epoch milliseconds persisted on the matching step.begin journal record. */
+  readonly startedAt?: number;
 }
 
 export interface TurnStepCompletedEvent {
@@ -653,8 +655,12 @@ export interface TurnStepCompletedEvent {
   readonly turnId: number;
   readonly step: number;
   readonly stepId?: string;
+  /** Epoch milliseconds persisted on the matching step.end journal record. */
+  readonly completedAt?: number;
   readonly usage?: TokenUsage;
   readonly finishReason?: string;
+  /** Epoch milliseconds when the first streamed model output arrived. */
+  readonly llmOutputStartedAt?: number;
   readonly llmFirstTokenLatencyMs?: number;
   readonly llmStreamDurationMs?: number;
   /**
@@ -1577,6 +1583,7 @@ export const turnStepStartedEventSchema = z.object({
   turnId: z.number(),
   step: z.number(),
   stepId: z.string().optional(),
+  startedAt: z.number().optional(),
 }) satisfies z.ZodType<TurnStepStartedEvent>;
 
 export const turnStepCompletedEventSchema = z.object({
@@ -1584,8 +1591,10 @@ export const turnStepCompletedEventSchema = z.object({
   turnId: z.number(),
   step: z.number(),
   stepId: z.string().optional(),
+  completedAt: z.number().optional(),
   usage: tokenUsageSchema.optional(),
   finishReason: z.string().optional(),
+  llmOutputStartedAt: z.number().optional(),
   llmFirstTokenLatencyMs: z.number().optional(),
   llmStreamDurationMs: z.number().optional(),
   llmRequestBuildMs: z.number().optional(),

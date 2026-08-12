@@ -43,6 +43,8 @@ export interface LLMRequestLogFields {
 }
 
 export interface LLMStreamTiming {
+  /** Epoch milliseconds when the first streamed output chunk arrived. */
+  readonly outputStartedAt: number;
   readonly firstTokenLatencyMs: number;
   readonly streamDurationMs: number;
   /**

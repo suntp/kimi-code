@@ -225,6 +225,7 @@ export function buildStreamTiming(
 ): ModelRequestTiming {
   const outputEndedAt = streamEndedAt ?? Date.now();
   const timing: MutableModelRequestTiming = {
+    outputStartedAt: firstChunkAt,
     firstTokenLatencyMs: Math.max(0, firstChunkAt - requestStartedAt),
     streamDurationMs: Math.max(0, outputEndedAt - firstChunkAt),
   };

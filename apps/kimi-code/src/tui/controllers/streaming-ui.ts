@@ -54,7 +54,15 @@ export class StreamingUIController {
   private _currentStep = 0;
   private _assistantDraft = '';
   private _thinkingDraft = '';
-  private _streamingBlock: { component: AssistantMessageComponent; entry: TranscriptEntry } | null = null;
+  private _streamingBlock: {
+    component: AssistantMessageComponent;
+    entry: TranscriptEntry;
+    stepKey: string;
+  } | null = null;
+  private readonly _assistantBlocksByStep = new Map<
+    string,
+    { component: AssistantMessageComponent; entry: TranscriptEntry }
+  >();
   private _activeThinkingComponent: ThinkingComponent | undefined = undefined;
   private _activeCompactionBlock: CompactionComponent | undefined = undefined;
   private _activeToolCalls = new Map<string, ToolCallBlockData>();
@@ -92,6 +100,29 @@ export class StreamingUIController {
 
   setStep(step: number): void {
     this._currentStep = step;
+  }
+
+  completeStep(
+    turnId: string,
+    step: number,
+    completedAt: number,
+    outputStartedAt?: number,
+  ): void {
+    const key = assistantStepKey(turnId, step);
+    const block = this._assistantBlocksByStep.get(key);
+    if (block === undefined) return;
+    if (outputStartedAt !== undefined) {
+      block.entry.createdAt = outputStartedAt;
+      block.component.setTimestamp(outputStartedAt);
+    }
+    block.entry.endedAt = completedAt;
+    block.component.setEndedAt(completedAt);
+    this._assistantBlocksByStep.delete(key);
+    this.host.state.ui.requestRender();
+  }
+
+  discardStep(turnId: string, step: number): void {
+    this._assistantBlocksByStep.delete(assistantStepKey(turnId, step));
   }
 
   hasActiveTurn(): boolean {
@@ -392,6 +423,7 @@ export class StreamingUIController {
     this._pendingReadGroup = null;
     this._currentTurnId = undefined;
     this._currentStep = 0;
+    this._assistantBlocksByStep.clear();
     this._streamingToolCallArguments.clear();
     this.pendingToolCallFlushIds.clear();
     this.host.state.ui.requestRender();
@@ -526,6 +558,7 @@ export class StreamingUIController {
     this.clearFlushTimerIfIdle();
     this._assistantDraft = '';
     this._streamingBlock = null;
+    this._assistantBlocksByStep.clear();
     this._thinkingDraft = '';
     this.disposeActiveThinkingComponent();
   }
@@ -559,6 +592,7 @@ export class StreamingUIController {
     // The finished turn keeps only its conclusion-bearing tail; intermediate
     // chatter folds into the step summary.
     this.host.mergeCompletedTurnAssistants();
+    this._assistantBlocksByStep.clear();
     this.resetToolCallState();
     this._currentTurnId = undefined;
 
@@ -590,10 +624,13 @@ export class StreamingUIController {
   // Live Render Hooks
   // ---------------------------------------------------------------------------
 
-  onStreamingTextStart(): void {
+  onStreamingTextStart(createdAt?: number): void {
     const { state } = this.host;
     this._pendingAgentGroup = null;
     this._pendingReadGroup = null;
+    const isReplaying = state.appState.isReplaying ?? false;
+    const timestamp = createdAt ?? (isReplaying ? undefined : Date.now());
+    const showTimestamp = state.appState.showTimestamp ?? true;
     const entry = {
       id: nextTranscriptId(),
       kind: 'assistant' as const,
@@ -601,9 +638,12 @@ export class StreamingUIController {
       renderMode: 'markdown' as const,
       content: '',
       modelText: true,
+      createdAt: timestamp,
     };
-    const component = new AssistantMessageComponent();
-    this._streamingBlock = { component, entry };
+    const component = new AssistantMessageComponent(true, timestamp, undefined, showTimestamp);
+    const stepKey = assistantStepKey(this._currentTurnId, this._currentStep);
+    this._streamingBlock = { component, entry, stepKey };
+    this._assistantBlocksByStep.set(stepKey, { component, entry });
     this.host.pushTranscriptEntry(entry);
     state.transcriptContainer.addChild(component);
     state.ui.requestRender();
@@ -618,9 +658,14 @@ export class StreamingUIController {
     }
   }
 
-  onStreamingTextEnd(): void {
+  onStreamingTextEnd(endedAt?: number): void {
     const block = this._streamingBlock;
     if (block !== null) {
+      if (endedAt !== undefined) {
+        block.entry.endedAt = endedAt;
+        block.component.setEndedAt(endedAt);
+        this._assistantBlocksByStep.delete(block.stepKey);
+      }
       block.component.updateContent(block.entry.content, { transient: false });
     }
     this._streamingBlock = null;
@@ -906,4 +951,8 @@ export class StreamingUIController {
     group.attach(solo.toolCallView.id, solo);
     return group;
   }
+}
+
+function assistantStepKey(turnId: string | undefined, step: number): string {
+  return `${turnId ?? ''}:${String(step)}`;
 }

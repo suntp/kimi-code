@@ -1,5 +1,7 @@
 import type { KimiConfig } from '@moonshot-ai/kimi-code-sdk';
 
+import { AssistantMessageComponent } from '#/tui/components/messages/assistant-message';
+import { UserMessageComponent } from '#/tui/components/messages/user-message';
 import { currentTheme, lightColors } from '#/tui/theme';
 import { loadTuiConfig, type TuiConfig } from '../config';
 import type { SlashCommandHost } from './dispatch';
@@ -55,6 +57,7 @@ export async function applyReloadedTuiConfig(
   host: SlashCommandHost,
   config: TuiConfig,
 ): Promise<void> {
+  const showTimestamp = config.showTimestamp ?? true;
   const resolved = config.theme === 'auto'
     ? (currentTheme.palette === lightColors ? 'light' : 'dark')
     : undefined;
@@ -63,12 +66,21 @@ export async function applyReloadedTuiConfig(
   host.setAppState({
     editorCommand: config.editorCommand,
     disablePasteBurst: config.disablePasteBurst,
+    showTimestamp,
     cacheExpiryHint: config.cacheExpiryHint,
     notifications: config.notifications,
     upgrade: config.upgrade,
     statusLine: config.statusLine,
   });
   host.state.editor.setDisablePasteBurst(config.disablePasteBurst);
+  for (const component of host.state.transcriptContainer.children) {
+    if (
+      component instanceof UserMessageComponent ||
+      component instanceof AssistantMessageComponent
+    ) {
+      component.setShowTimestamp(showTimestamp);
+    }
+  }
 }
 
 function applyRuntimeConfig(host: SlashCommandHost, config: KimiConfig): void {

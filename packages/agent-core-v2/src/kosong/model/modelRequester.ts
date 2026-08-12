@@ -32,6 +32,7 @@ export interface ModelRequestInput {
 }
 
 export interface ModelRequestTiming {
+  readonly outputStartedAt: number;
   readonly firstTokenLatencyMs: number;
   readonly streamDurationMs: number;
   readonly requestBuildMs?: number;

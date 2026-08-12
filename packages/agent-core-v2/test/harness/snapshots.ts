@@ -273,7 +273,10 @@ function normalizeValue(value: unknown, labels: SnapshotLabels): unknown {
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => !isVolatileDurationKey(key))
+        .filter(
+          ([key]) =>
+            !isVolatileDurationKey(key) && key !== 'startedAt' && key !== 'completedAt',
+        )
         .map(([key, nested]) => [key, normalizeObjectField(key, nested, labels)]),
     );
   }
@@ -331,6 +334,7 @@ function labelFor(value: string, labels: Map<string, string>, kind: string): str
 
 function isVolatileDurationKey(key: string): boolean {
   return (
+    key === 'llmOutputStartedAt' ||
     key === 'llmFirstTokenLatencyMs' ||
     key === 'llmStreamDurationMs' ||
     key === 'llmRequestBuildMs' ||

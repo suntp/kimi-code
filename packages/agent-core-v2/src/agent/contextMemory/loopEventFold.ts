@@ -62,6 +62,7 @@ export type LoopRecordedEvent =
       readonly step?: number;
       readonly finishReason?: string;
       readonly usage?: TokenUsage;
+      readonly llmOutputStartedAt?: number;
       readonly llmFirstTokenLatencyMs?: number;
       readonly llmStreamDurationMs?: number;
       readonly llmRequestBuildMs?: number;

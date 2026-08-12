@@ -54,6 +54,7 @@ export class ContextMemory {
   private _tokenCount = 0;
   private tokenCountCoveredMessageCount = 0;
   private openSteps: Map<string, ContextMessage> = new Map();
+  private openStepStartedAt = new Map<string, number>();
   private pendingToolResultIds = new Set<string>();
   private deferredMessages: ContextMessage[] = [];
   private _lastAssistantAt: number | null = null;
@@ -175,6 +176,7 @@ export class ContextMemory {
     this._tokenCount = 0;
     this.tokenCountCoveredMessageCount = 0;
     this.openSteps.clear();
+    this.openStepStartedAt.clear();
     this.pendingToolResultIds.clear();
     this.deferredMessages = [];
     this._lastAssistantAt = null;
@@ -287,6 +289,7 @@ export class ContextMemory {
     this.agent.replayBuilder.removeLastMessages(removedMessages);
 
     this.openSteps.clear();
+    this.openStepStartedAt.clear();
     this.pendingToolResultIds.clear();
     this.deferredMessages = [];
     this.agent.microCompaction.reset(this._history.length);
@@ -416,6 +419,7 @@ export class ContextMemory {
       ? [summaryMessage, ...this._history.slice(input.compactedCount)]
       : [...keptMessages, summaryMessage];
     this.openSteps.clear();
+    this.openStepStartedAt.clear();
     this.pendingToolResultIds.clear();
     // Drop deferred messages (mostly injections/system reminders) instead of
     // flushing them: initial context is rebuilt every turn.
@@ -598,6 +602,7 @@ export class ContextMemory {
 
   finishResume(): void {
     this.openSteps.clear();
+    this.openStepStartedAt.clear();
     const closed = this.closePendingToolResults();
     if (closed.length > 0) {
       // Routine end-of-resume close of a genuinely interrupted trailing call
@@ -648,10 +653,15 @@ export class ContextMemory {
     return this.closePendingToolResults(output).length;
   }
 
-  appendLoopEvent(event: LoopRecordedEvent): void {
+  appendLoopEvent(event: LoopRecordedEvent, recordedAt?: number): number | undefined {
+    const eventTime =
+      this.agent.records.restoring === null
+        ? (recordedAt ?? Date.now())
+        : this.agent.records.restoring.time;
     this.agent.records.logRecord({
       type: 'context.append_loop_event',
       event,
+      time: eventTime,
     });
     switch (event.type) {
       case 'step.begin': {
@@ -676,11 +686,25 @@ export class ContextMemory {
         };
         this.pushHistory(message);
         this.openSteps.set(event.uuid, message);
-        return;
+        if (eventTime !== undefined) this.openStepStartedAt.set(event.uuid, eventTime);
+        return eventTime;
       }
       case 'step.end': {
         const openStep = this.openSteps.get(event.uuid);
         this.openSteps.delete(event.uuid);
+        const stepStartedAt = this.openStepStartedAt.get(event.uuid);
+        this.openStepStartedAt.delete(event.uuid);
+        const outputStartedAt =
+          event.llmOutputStartedAt ??
+          (stepStartedAt === undefined || event.llmFirstTokenLatencyMs === undefined
+            ? undefined
+            : stepStartedAt + event.llmFirstTokenLatencyMs);
+        if (openStep !== undefined && outputStartedAt !== undefined) {
+          this.agent.replayBuilder.setMessageTiming(openStep, {
+            createdAt: outputStartedAt,
+            completedAt: eventTime,
+          });
+        }
         if (event.usage !== undefined) {
           const openStepIndex = openStep === undefined ? -1 : this._history.indexOf(openStep);
           const coveredCount =
@@ -705,7 +729,7 @@ export class ContextMemory {
           this.tokenCountCoveredMessageCount = coveredCount;
         }
         this.flushDeferredMessagesIfToolExchangeClosed();
-        return;
+        return eventTime;
       }
       case 'content.part': {
         const openStep = this.openSteps.get(event.stepUuid);
@@ -715,7 +739,7 @@ export class ContextMemory {
           );
         }
         openStep.content.push(event.part);
-        return;
+        return eventTime;
       }
       case 'tool.call': {
         const openStep = this.openSteps.get(event.stepUuid);
@@ -736,7 +760,7 @@ export class ContextMemory {
           openStep.toolCallDisplays[event.toolCallId] = event.display;
         }
         this.pendingToolResultIds.add(event.toolCallId);
-        return;
+        return eventTime;
       }
       case 'tool.result': {
         // Drop a result for an id that is not awaiting one: it was already
@@ -756,16 +780,20 @@ export class ContextMemory {
         });
         this.pendingToolResultIds.delete(event.toolCallId);
         this.flushDeferredMessagesIfToolExchangeClosed();
-        return;
+        return eventTime;
       }
     }
   }
 
   appendMessage(message: ContextMessage): void {
+    const messageTime =
+      this.agent.records.restoring === null ? Date.now() : this.agent.records.restoring.time;
     this.agent.records.logRecord({
       type: 'context.append_message',
       message,
+      time: messageTime,
     });
+    this.agent.replayBuilder.setMessageTiming(message, { createdAt: messageTime });
     if (this.hasOpenToolExchange()) {
       this.deferredMessages.push(message);
       return;

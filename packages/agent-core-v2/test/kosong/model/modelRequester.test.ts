@@ -315,8 +315,9 @@ describe('effectiveMaxCompletionTokens', () => {
 });
 
 describe('buildStreamTiming', () => {
-  it('returns base TTFT and stream duration only', () => {
+  it('returns the absolute output start with base TTFT and stream duration', () => {
     expect(buildStreamTiming(100, undefined, 250, 400, undefined)).toEqual({
+      outputStartedAt: 250,
       firstTokenLatencyMs: 150,
       streamDurationMs: 150,
     });
@@ -324,6 +325,7 @@ describe('buildStreamTiming', () => {
 
   it('splits TTFT across the request-sent boundary', () => {
     expect(buildStreamTiming(100, 180, 250, 400, undefined)).toEqual({
+      outputStartedAt: 250,
       firstTokenLatencyMs: 150,
       streamDurationMs: 150,
       requestBuildMs: 80,
@@ -335,6 +337,7 @@ describe('buildStreamTiming', () => {
     expect(
       buildStreamTiming(100, 120, 250, 400, { serverDecodeMs: 90, clientConsumeMs: 60 }),
     ).toEqual({
+      outputStartedAt: 250,
       firstTokenLatencyMs: 150,
       streamDurationMs: 150,
       requestBuildMs: 20,
